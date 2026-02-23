@@ -1,0 +1,206 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+////////////////////////////
+/// ROLES & USERS
+////////////////////////////
+
+model Role {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  users     User[]
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id           String  @id @default(uuid())
+  name         String
+  email        String  @unique
+  passwordHash String
+  active       Boolean @default(true)
+
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  orders Order[] @relation("SellerOrders")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+////////////////////////////
+/// PRODUCTS & STOCK
+////////////////////////////
+
+model Product {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  basePrice   Decimal @db.Decimal(10, 2)
+  costPrice   Decimal @db.Decimal(10, 2)
+  active      Boolean @default(true)
+
+  variants ProductVariant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ProductVariant {
+  id            String  @id @default(uuid())
+  size          String?
+  stockQuantity Int     @default(0)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  orderItems OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+////////////////////////////
+/// CUSTOMERS
+////////////////////////////
+
+model Customer {
+  id         String  @id @default(uuid())
+  name       String
+  phone      String?
+  email      String?
+  street     String
+  number     String
+  city       String
+  state      String
+  zipCode    String
+  complement String?
+
+  orders Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+////////////////////////////
+/// STATUS TABLES
+////////////////////////////
+
+model OrderStatus {
+  id     String  @id @default(uuid())
+  name   String  @unique
+  orders Order[]
+}
+
+model PaymentStatus {
+  id     String  @id @default(uuid())
+  name   String  @unique
+  orders Order[]
+}
+
+model DeliveryStatus {
+  id     String  @id @default(uuid())
+  name   String  @unique
+  orders Order[]
+}
+
+model PaymentMethod {
+  id       String    @id @default(uuid())
+  name     String    @unique
+  payments Payment[]
+}
+
+model SaleChannel {
+  id     String  @id @default(uuid())
+  name   String  @unique
+  orders Order[]
+}
+
+////////////////////////////
+/// ORDERS
+////////////////////////////
+
+model Order {
+  id           String    @id @default(uuid())
+  orderDate    DateTime  @default(now())
+  deliveryDate DateTime?
+
+  totalAmount Decimal @db.Decimal(10, 2)
+  totalCost   Decimal @db.Decimal(10, 2)
+  totalProfit Decimal @db.Decimal(10, 2)
+
+  sellerId String
+  seller   User   @relation("SellerOrders", fields: [sellerId], references: [id])
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  orderStatusId String
+  orderStatus   OrderStatus @relation(fields: [orderStatusId], references: [id])
+
+  paymentStatusId String
+  paymentStatus   PaymentStatus @relation(fields: [paymentStatusId], references: [id])
+
+  deliveryStatusId String
+  deliveryStatus   DeliveryStatus @relation(fields: [deliveryStatusId], references: [id])
+
+  saleChannelId String
+  saleChannel   SaleChannel @relation(fields: [saleChannelId], references: [id])
+
+  items    OrderItem[]
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+////////////////////////////
+/// ORDER ITEMS
+////////////////////////////
+
+model OrderItem {
+  id       String @id @default(uuid())
+  quantity Int
+
+  unitPrice  Decimal @db.Decimal(10, 2)
+  unitCost   Decimal @db.Decimal(10, 2)
+  totalPrice Decimal @db.Decimal(10, 2)
+  totalCost  Decimal @db.Decimal(10, 2)
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id])
+
+  productVariantId String
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id])
+}
+
+////////////////////////////
+/// PAYMENTS
+////////////////////////////
+
+model Payment {
+  id     String  @id @default(uuid())
+  amount Decimal @db.Decimal(10, 2)
+
+  paymentDate DateTime @default(now())
+  notes       String?
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id])
+
+  paymentMethodId String
+  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+}
