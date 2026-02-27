@@ -1,22 +1,10 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
-
-////////////////////////////
-/// ROLES & USERS
-////////////////////////////
 
 model Role {
   id        String   @id @default(uuid())
@@ -32,6 +20,8 @@ model User {
   passwordHash String
   active       Boolean @default(true)
 
+  refreshToken String?
+
   roleId String
   role   Role   @relation(fields: [roleId], references: [id])
 
@@ -40,10 +30,6 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
-////////////////////////////
-/// PRODUCTS & STOCK
-////////////////////////////
 
 model Product {
   id          String  @id @default(uuid())
@@ -60,22 +46,35 @@ model Product {
 }
 
 model ProductVariant {
-  id            String  @id @default(uuid())
-  size          String?
-  stockQuantity Int     @default(0)
+  id            String @id @default(uuid())
+  name          String
+  stockQuantity Int    @default(0)
 
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
+  prices     ProductPrice[]
   orderItems OrderItem[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  stockMovements StockMovement[]
 }
 
-////////////////////////////
-/// CUSTOMERS
-////////////////////////////
+model ProductPrice {
+  id String @id @default(uuid())
+
+  productVariantId String
+  saleChannelId    String
+
+  price Decimal @db.Decimal(10, 2)
+  cost  Decimal @db.Decimal(10, 2)
+
+  productVariant ProductVariant @relation(fields: [productVariantId], references: [id])
+  saleChannel    SaleChannel    @relation(fields: [saleChannelId], references: [id])
+
+  @@unique([productVariantId, saleChannelId])
+}
 
 model Customer {
   id         String  @id @default(uuid())
@@ -94,10 +93,6 @@ model Customer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
-////////////////////////////
-/// STATUS TABLES
-////////////////////////////
 
 model OrderStatus {
   id     String  @id @default(uuid())
@@ -124,14 +119,11 @@ model PaymentMethod {
 }
 
 model SaleChannel {
-  id     String  @id @default(uuid())
-  name   String  @unique
+  id     String         @id @default(uuid())
+  name   String         @unique
   orders Order[]
+  prices ProductPrice[]
 }
-
-////////////////////////////
-/// ORDERS
-////////////////////////////
 
 model Order {
   id           String    @id @default(uuid())
@@ -163,13 +155,10 @@ model Order {
   items    OrderItem[]
   payments Payment[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  stockMovements StockMovement[]
 }
-
-////////////////////////////
-/// ORDER ITEMS
-////////////////////////////
 
 model OrderItem {
   id       String @id @default(uuid())
@@ -187,9 +176,27 @@ model OrderItem {
   productVariant   ProductVariant @relation(fields: [productVariantId], references: [id])
 }
 
-////////////////////////////
-/// PAYMENTS
-////////////////////////////
+model StockMovement {
+  id String @id @default(uuid())
+
+  type     StockMovementType
+  quantity Int
+
+  reason String?
+
+  productVariantId String
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id])
+
+  orderId String?
+  order   Order?  @relation(fields: [orderId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+enum StockMovementType {
+  IN
+  OUT
+}
 
 model Payment {
   id     String  @id @default(uuid())
