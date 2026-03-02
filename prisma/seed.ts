@@ -1,6 +1,7 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Pool } from 'pg';
+import * as bcrypt from 'bcrypt';
 
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;

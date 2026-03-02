@@ -256,15 +256,28 @@ export class OrdersService {
   }
 
   async findAll(user: { sub: string; role: string }) {
+    const baseQuery = {
+      include: {
+        customer: true,
+        saleChannel: true,
+        orderStatus: true,
+        paymentStatus: true,
+        deliveryStatus: true,
+        items: {
+          include: {
+            productVariant: true,
+          },
+        },
+      },
+    };
+
     if (user.role === 'ADMIN') {
-      return this.prisma.order.findMany({
-        include: { items: true },
-      });
+      return this.prisma.order.findMany(baseQuery);
     }
 
     return this.prisma.order.findMany({
       where: { sellerId: user.sub },
-      include: { items: true },
+      ...baseQuery,
     });
   }
 }
