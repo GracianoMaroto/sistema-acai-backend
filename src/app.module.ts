@@ -11,6 +11,10 @@ import { StockService } from './stock/stock.service';
 import { OrdersService } from './orders/orders.service';
 import { StockModule } from './stock/stock.module';
 import { ProductsModule } from './products/products.module';
+import { SaleChannelsModule } from './sale-channels/sale-channels.module';
+import { ProductPriceModule } from './productprice/productprice.module';
+import { ProductPriceService } from './productprice/productprice.service';
+import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
 
 @Module({
   imports: [
@@ -24,8 +28,11 @@ import { ProductsModule } from './products/products.module';
     OrdersModule,
     StockModule,
     ProductsModule,
+    SaleChannelsModule,
+    ProductPriceModule,
+    PaymentMethodsModule,
   ],
   controllers: [AppController],
-  providers: [AppService, OrdersService, StockService],
+  providers: [AppService, OrdersService, StockService, ProductPriceService],
 })
 export class AppModule {}

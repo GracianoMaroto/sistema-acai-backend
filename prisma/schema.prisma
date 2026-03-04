@@ -80,7 +80,7 @@ model Customer {
   id         String  @id @default(uuid())
   name       String
   phone      String?
-  email      String?
+  email      String? @unique
   street     String
   number     String
   city       String
@@ -119,10 +119,19 @@ model PaymentMethod {
 }
 
 model SaleChannel {
-  id     String         @id @default(uuid())
-  name   String         @unique
-  orders Order[]
-  prices ProductPrice[]
+  id            String        @id @default(uuid())
+  name          String        @unique
+  priceModifier Decimal?      @db.Decimal(10, 2)
+  modifierType  ModifierType?
+  createdAt     DateTime      @default(now())
+
+  productPrices ProductPrice[]
+  orders        Order[]
+}
+
+enum ModifierType {
+  DISCOUNT
+  MARKUP
 }
 
 model Order {
@@ -164,10 +173,8 @@ model OrderItem {
   id       String @id @default(uuid())
   quantity Int
 
-  unitPrice  Decimal @db.Decimal(10, 2)
-  unitCost   Decimal @db.Decimal(10, 2)
-  totalPrice Decimal @db.Decimal(10, 2)
-  totalCost  Decimal @db.Decimal(10, 2)
+  unitPrice Decimal @db.Decimal(10, 2)
+  unitCost  Decimal @db.Decimal(10, 2)
 
   orderId String
   order   Order  @relation(fields: [orderId], references: [id])

@@ -1,10 +1,11 @@
 import {
-  IsUUID,
+  IsArray,
   IsOptional,
+  IsUUID,
   ValidateNested,
   IsInt,
   Min,
-  ArrayMinSize,
+  IsDecimal,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -17,25 +18,30 @@ class CreateOrderItemDto {
   quantity: number;
 }
 
+class CreatePaymentDto {
+  @IsUUID()
+  paymentMethodId: string;
+
+  @IsDecimal()
+  amount: string; // Decimal vem como string no Prisma
+}
+
 export class CreateOrderDto {
   @IsUUID()
   saleChannelId: string;
 
-  @IsUUID()
-  orderStatusId: string;
-
-  @IsUUID()
-  paymentStatusId: string;
-
-  @IsUUID()
-  deliveryStatusId: string;
-
-  @IsUUID()
   @IsOptional()
+  @IsUUID()
   customerId?: string;
 
+  @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateOrderItemDto)
-  @ArrayMinSize(1)
   items: CreateOrderItemDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreatePaymentDto)
+  payments?: CreatePaymentDto[];
 }

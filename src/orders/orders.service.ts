@@ -7,13 +7,391 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { Prisma } from '@prisma/client';
 import { StockService } from '../stock/stock.service';
+import { ProductPriceService } from '../productprice/productprice.service';
+import { AddPaymentDto } from '../payment-methods/dto/create-payment.dto';
 
 @Injectable()
 export class OrdersService {
   constructor(
     private prisma: PrismaService,
     private stockService: StockService,
+    private productPriceService: ProductPriceService,
   ) {}
+
+  async create(dto: CreateOrderDto, sellerId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      // 🔎 Buscar status obrigatórios
+      const [
+        pendingOrderStatus,
+        pendingPaymentStatus,
+        partialPaymentStatus,
+        paidPaymentStatus,
+        deliveryPending,
+      ] = await Promise.all([
+        tx.orderStatus.findUnique({ where: { name: 'PENDING' } }),
+        tx.paymentStatus.findUnique({ where: { name: 'PENDING' } }),
+        tx.paymentStatus.findUnique({ where: { name: 'PARCIAL' } }),
+        tx.paymentStatus.findUnique({ where: { name: 'PAID' } }),
+        tx.deliveryStatus.findUnique({ where: { name: 'PENDING' } }),
+      ]);
+
+      // 🚨 Validação de segurança
+      if (
+        !pendingOrderStatus ||
+        !pendingPaymentStatus ||
+        !partialPaymentStatus ||
+        !paidPaymentStatus ||
+        !deliveryPending
+      ) {
+        throw new BadRequestException(
+          'Status iniciais não configurados corretamente no sistema.',
+        );
+      }
+
+      let totalAmount = new Prisma.Decimal(0);
+      let totalCost = new Prisma.Decimal(0);
+      let totalProfit = new Prisma.Decimal(0);
+      const itemsData = [];
+
+      // 🔥 Processar itens
+      for (const item of dto.items) {
+        const variant = await tx.productVariant.findUnique({
+          where: { id: item.productVariantId },
+        });
+
+        if (!variant) {
+          throw new NotFoundException('Produto não encontrado');
+        }
+
+        const priceData = await this.productPriceService.getPriceOrFail(
+          tx,
+          variant.id,
+          dto.saleChannelId,
+        );
+
+        const unitPrice = priceData.price;
+        const unitCost = priceData.cost;
+
+        const subtotal = unitPrice.mul(item.quantity);
+        const totalItemCost = unitCost.mul(item.quantity);
+        const profit = subtotal.sub(totalItemCost);
+
+        totalAmount = totalAmount.add(subtotal);
+        totalCost = totalCost.add(totalItemCost);
+        totalProfit = totalProfit.add(profit);
+
+        itemsData.push({
+          productVariantId: variant.id,
+          quantity: item.quantity,
+          unitPrice,
+          unitCost,
+        });
+      }
+
+      // 🧾 Criar pedido
+      const order = await tx.order.create({
+        data: {
+          seller: { connect: { id: sellerId } },
+          saleChannel: { connect: { id: dto.saleChannelId } },
+          customer: dto.customerId
+            ? { connect: { id: dto.customerId } }
+            : undefined,
+          orderStatus: { connect: { id: pendingOrderStatus.id } },
+          paymentStatus: { connect: { id: pendingPaymentStatus.id } },
+          deliveryStatus: { connect: { id: deliveryPending.id } },
+          totalAmount,
+          totalCost,
+          totalProfit,
+          items: { create: itemsData },
+        },
+      });
+
+      // 💳 Criar pagamentos se existirem
+      let totalPaid = new Prisma.Decimal(0);
+
+      if (dto.payments?.length) {
+        for (const payment of dto.payments) {
+          const amount = new Prisma.Decimal(payment.amount);
+
+          await tx.payment.create({
+            data: {
+              orderId: order.id,
+              paymentMethodId: payment.paymentMethodId,
+              amount,
+            },
+          });
+
+          totalPaid = totalPaid.add(amount);
+        }
+      }
+
+      // 🔄 Atualizar status de pagamento automaticamente
+      let paymentStatusId = pendingPaymentStatus.id;
+
+      if (totalPaid.gt(0) && totalPaid.lt(totalAmount)) {
+        paymentStatusId = partialPaymentStatus.id;
+      }
+
+      if (totalPaid.gte(totalAmount)) {
+        paymentStatusId = paidPaymentStatus.id;
+      }
+
+      const updatedOrder = await tx.order.update({
+        where: { id: order.id },
+        data: { paymentStatusId },
+        include: {
+          items: true,
+          payments: true,
+          orderStatus: true,
+          paymentStatus: true,
+        },
+      });
+
+      return updatedOrder;
+    });
+  }
+
+  async startOrder(orderId: string) {
+    return this.changeOrderStatus(orderId, 'PENDING', 'IN_COURSE');
+  }
+
+  async confirmPayment(orderId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: { payments: true },
+      });
+
+      if (!order) throw new NotFoundException('Pedido não encontrado');
+
+      const totalPaid = order.payments.reduce(
+        (sum, p) => sum.add(p.amount),
+        new Prisma.Decimal(0),
+      );
+
+      if (totalPaid.lt(order.totalAmount)) {
+        throw new BadRequestException('Pagamento ainda não cobre o total');
+      }
+
+      const paidStatus = await tx.paymentStatus.findUnique({
+        where: { name: 'PAID' },
+      });
+
+      return tx.order.update({
+        where: { id: orderId },
+        data: { paymentStatusId: paidStatus.id },
+      });
+    });
+  }
+
+  async addPayment(orderId: string, dto: AddPaymentDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: { payments: true },
+      });
+
+      if (!order) {
+        throw new NotFoundException('Pedido não encontrado');
+      }
+
+      if (order.orderStatusId === 'CANCELED') {
+        throw new BadRequestException('Pedido cancelado');
+      }
+
+      const amount = new Prisma.Decimal(dto.amount);
+
+      await tx.payment.create({
+        data: {
+          orderId,
+          paymentMethodId: dto.paymentMethodId,
+          amount,
+        },
+      });
+
+      // 🔥 recalcular total pago
+      const payments = await tx.payment.findMany({
+        where: { orderId },
+      });
+
+      const totalPaid = payments.reduce(
+        (sum, p) => sum.add(p.amount),
+        new Prisma.Decimal(0),
+      );
+
+      const pending = await tx.paymentStatus.findUnique({
+        where: { name: 'PENDING' },
+      });
+
+      const partial = await tx.paymentStatus.findUnique({
+        where: { name: 'PARCIAL' },
+      });
+
+      const paid = await tx.paymentStatus.findUnique({
+        where: { name: 'PAID' },
+      });
+
+      let paymentStatusId = pending.id;
+
+      if (totalPaid.gt(0) && totalPaid.lt(order.totalAmount)) {
+        paymentStatusId = partial.id;
+      }
+
+      if (totalPaid.gte(order.totalAmount)) {
+        paymentStatusId = paid.id;
+      }
+
+      return tx.order.update({
+        where: { id: orderId },
+        data: { paymentStatusId },
+        include: {
+          payments: {
+            include: { paymentMethod: true },
+          },
+          paymentStatus: true,
+        },
+      });
+    });
+  }
+
+  async removePayment(orderId: string, paymentId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: {
+          payments: true,
+          orderStatus: true,
+        },
+      });
+
+      if (!order) {
+        throw new NotFoundException('Pedido não encontrado');
+      }
+
+      if (order.orderStatus.name === 'FINALIZED') {
+        throw new BadRequestException(
+          'Não é possível alterar pagamentos de pedido finalizado',
+        );
+      }
+
+      const payment = order.payments.find((p) => p.id === paymentId);
+
+      if (!payment) {
+        throw new NotFoundException('Pagamento não encontrado');
+      }
+
+      // 🔥 Remove pagamento
+      await tx.payment.delete({
+        where: { id: paymentId },
+      });
+
+      // 🔥 Recalcular total pago
+      const remainingPayments = await tx.payment.findMany({
+        where: { orderId },
+      });
+
+      const totalPaid = remainingPayments.reduce(
+        (sum, p) => sum.add(p.amount),
+        new Prisma.Decimal(0),
+      );
+
+      const pending = await tx.paymentStatus.findUnique({
+        where: { name: 'PENDING' },
+      });
+
+      const partial = await tx.paymentStatus.findUnique({
+        where: { name: 'PARCIAL' },
+      });
+
+      const paid = await tx.paymentStatus.findUnique({
+        where: { name: 'PAID' },
+      });
+
+      let paymentStatusId = pending.id;
+
+      if (totalPaid.gt(0) && totalPaid.lt(order.totalAmount)) {
+        paymentStatusId = partial.id;
+      }
+
+      if (totalPaid.gte(order.totalAmount)) {
+        paymentStatusId = paid.id;
+      }
+
+      return tx.order.update({
+        where: { id: orderId },
+        data: { paymentStatusId },
+        include: {
+          payments: {
+            include: { paymentMethod: true },
+          },
+          paymentStatus: true,
+        },
+      });
+    });
+  }
+
+  async finalizeOrder(orderId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: {
+          items: true,
+          orderStatus: true,
+          paymentStatus: true,
+        },
+      });
+
+      if (!order) throw new NotFoundException('Pedido não encontrado');
+
+      if (order.orderStatus.name !== 'IN_COURSE') {
+        throw new BadRequestException('Pedido precisa estar IN_COURSE');
+      }
+
+      // 🔥 VALIDA ESTOQUE
+      await this.stockService.validateStock(tx, order.items);
+
+      // 🔥 BAIXA ESTOQUE
+      await this.stockService.decreaseStock(tx, order.id, order.items);
+
+      const finalizedStatus = await tx.orderStatus.findUnique({
+        where: { name: 'FINALIZED' },
+      });
+
+      return tx.order.update({
+        where: { id: orderId },
+        data: {
+          orderStatusId: finalizedStatus.id,
+        },
+      });
+    });
+  }
+
+  async cancelOrder(orderId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: { items: true, orderStatus: true },
+      });
+
+      if (!order) throw new NotFoundException('Pedido não encontrado');
+
+      const canceledStatus = await tx.orderStatus.findUnique({
+        where: { name: 'CANCELED' },
+      });
+
+      if (order.orderStatus.name === 'FINALIZED') {
+        // 🔁 DEVOLVE ESTOQUE
+        await this.stockService.increaseStock(tx, order.id, order.items);
+      }
+
+      return tx.order.update({
+        where: { id: orderId },
+        data: {
+          orderStatusId: canceledStatus.id,
+        },
+      });
+    });
+  }
 
   private async changeOrderStatus(
     orderId: string,
@@ -37,9 +415,6 @@ export class OrdersService {
       const nextStatus = await tx.orderStatus.findUnique({
         where: { name: next },
       });
-      if (!nextStatus) {
-        throw new NotFoundException(`Status ${next} não encontrado`);
-      }
 
       return tx.order.update({
         where: { id: orderId },
@@ -47,214 +422,6 @@ export class OrdersService {
       });
     });
   }
-
-  async startOrder(orderId: string) {
-    return this.changeOrderStatus(orderId, 'PENDING', 'IN COURSE');
-  }
-  async create(dto: CreateOrderDto, sellerId: string) {
-    let totalAmount = new Prisma.Decimal(0);
-    let totalCost = new Prisma.Decimal(0);
-
-    const createdStatus = await this.prisma.orderStatus.findUnique({
-      where: { name: 'PENDING' },
-    });
-
-    const pendingPayment = await this.prisma.paymentStatus.findUnique({
-      where: { name: 'PENDING' },
-    });
-
-    const pendingDelivery = await this.prisma.deliveryStatus.findUnique({
-      where: { name: 'PENDING' },
-    });
-
-    const itemsData = await Promise.all(
-      dto.items.map(async (item) => {
-        const priceData = await this.prisma.productPrice.findUnique({
-          where: {
-            productVariantId_saleChannelId: {
-              productVariantId: item.productVariantId,
-              saleChannelId: dto.saleChannelId,
-            },
-          },
-        });
-
-        if (!priceData) {
-          throw new NotFoundException(
-            'Preço não encontrado para este canal de venda',
-          );
-        }
-
-        const unitPrice = priceData.price;
-        const unitCost = priceData.cost;
-
-        const totalPrice = unitPrice.mul(item.quantity);
-        const totalItemCost = unitCost.mul(item.quantity);
-
-        totalAmount = totalAmount.add(totalPrice);
-        totalCost = totalCost.add(totalItemCost);
-
-        return {
-          quantity: item.quantity,
-          unitPrice,
-          unitCost,
-          totalPrice,
-          totalCost: totalItemCost,
-          productVariantId: item.productVariantId,
-        };
-      }),
-    );
-
-    return this.prisma.order.create({
-      data: {
-        sellerId,
-        saleChannelId: dto.saleChannelId,
-        customerId: dto.customerId,
-
-        orderStatusId: createdStatus.id,
-        paymentStatusId: pendingPayment.id,
-        deliveryStatusId: pendingDelivery.id,
-
-        totalAmount,
-        totalCost,
-        totalProfit: totalAmount.sub(totalCost),
-
-        items: {
-          create: itemsData,
-        },
-      },
-      include: {
-        items: true,
-      },
-    });
-  }
-
-  async confirmPayment(orderId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        include: { paymentStatus: true },
-      });
-
-      if (!order) {
-        throw new NotFoundException('Pedido não encontrado');
-      }
-
-      if (order.paymentStatus.name !== 'PENDING') {
-        throw new BadRequestException('Pagamento já confirmado ou inválido');
-      }
-
-      const paidStatus = await tx.paymentStatus.findUnique({
-        where: { name: 'PAID' },
-      });
-
-      return tx.order.update({
-        where: { id: orderId },
-        data: {
-          paymentStatusId: paidStatus.id,
-        },
-      });
-    });
-  }
-
-  async finalizeOrder(orderId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        include: {
-          items: true,
-          orderStatus: true,
-          paymentStatus: true,
-        },
-      });
-
-      if (!order) {
-        throw new NotFoundException('Pedido não encontrado');
-      }
-      if (order.orderStatus.name === 'FINALIZED') {
-        throw new BadRequestException('Pedido já finalizado');
-      }
-      if (order.orderStatus.name !== 'IN COURSE') {
-        throw new BadRequestException(
-          'Pedido precisa estar EM ANDAMENTO para ser finalizado',
-        );
-      }
-      if (order.paymentStatus.name !== 'PAID') {
-        throw new BadRequestException(
-          'Pedido precisa estar PAGO para ser finalizado',
-        );
-      }
-      // Buscar status FINALIZED
-      const finalizedStatus = await tx.orderStatus.findUnique({
-        where: { name: 'FINALIZED' },
-      });
-
-      if (!finalizedStatus) {
-        throw new NotFoundException('Status FINALIZED não encontrado no banco');
-      }
-
-      // Validação e baixa de estoque
-      await this.stockService.validateStock(tx, order.items);
-      await this.stockService.decreaseStock(tx, order.id, order.items);
-
-      // Atualizar status
-      return tx.order.update({
-        where: { id: orderId },
-        data: {
-          orderStatusId: finalizedStatus.id,
-        },
-      });
-    });
-  }
-
-  async cancelOrder(orderId: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const finalizedStatus = await tx.orderStatus.findUnique({
-        where: { name: 'FINALIZED' },
-      });
-
-      const canceledStatus = await tx.orderStatus.findUnique({
-        where: { name: 'CANCELED' },
-      });
-
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        include: { items: true },
-      });
-
-      if (!order) {
-        throw new NotFoundException('Pedido não encontrado');
-      }
-
-      if (!finalizedStatus || !canceledStatus) {
-        throw new NotFoundException(
-          'Status necessário não encontrado no banco',
-        );
-      }
-
-      if (order.orderStatusId === canceledStatus?.id) {
-        throw new BadRequestException('Pedido já cancelado');
-      }
-
-      if (order.orderStatusId !== finalizedStatus?.id) {
-        throw new BadRequestException(
-          'Apenas pedidos finalizados podem ser cancelados',
-        );
-      }
-
-      // 🔁 Devolve estoque
-      await this.stockService.increaseStock(tx, order.id, order.items);
-
-      await tx.order.update({
-        where: { id: order.id },
-        data: {
-          orderStatusId: canceledStatus.id,
-        },
-      });
-
-      return { message: 'Pedido cancelado e estoque devolvido com sucesso' };
-    });
-  }
-
   async findAll(user: { sub: string; role: string }) {
     const baseQuery = {
       include: {
@@ -277,7 +444,31 @@ export class OrdersService {
 
     return this.prisma.order.findMany({
       where: { sellerId: user.sub },
+      orderBy: { createdAt: 'desc' },
       ...baseQuery,
+    });
+  }
+  async findOne(id: string) {
+    return this.prisma.order.findUnique({
+      where: { id },
+      include: {
+        seller: true,
+        customer: true,
+        saleChannel: true,
+        orderStatus: true,
+        paymentStatus: true,
+        deliveryStatus: true,
+        payments: {
+          include: {
+            paymentMethod: true,
+          },
+        },
+        items: {
+          include: {
+            productVariant: true,
+          },
+        },
+      },
     });
   }
 }

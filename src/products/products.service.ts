@@ -13,7 +13,7 @@ export class ProductsService {
       data: {
         name: dto.name,
         description: dto.description,
-        basePrice: new Prisma.Decimal(dto.price),
+        basePrice: new Prisma.Decimal(dto.basePrice),
         costPrice: dto.costPrice
           ? new Prisma.Decimal(dto.costPrice)
           : undefined,
@@ -38,14 +38,19 @@ export class ProductsService {
     return this.prisma.product.update({
       where: { id },
       data: {
-        ...dto,
-        basePrice: dto.price ? new Prisma.Decimal(dto.price) : undefined,
+        name: dto.name,
+        description: dto.description,
+        basePrice: dto.basePrice
+          ? new Prisma.Decimal(dto.basePrice)
+          : undefined,
         costPrice: dto.costPrice
           ? new Prisma.Decimal(dto.costPrice)
           : undefined,
+        active: dto.active,
       },
     });
   }
+
   async getMetrics() {
     const totalProducts = await this.prisma.product.count();
 

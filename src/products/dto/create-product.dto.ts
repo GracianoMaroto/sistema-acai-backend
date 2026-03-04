@@ -9,7 +9,7 @@ export class CreateProductDto {
   description?: string;
 
   @IsNumber()
-  price: number;
+  basePrice: number;
 
   @IsOptional()
   @IsNumber()
