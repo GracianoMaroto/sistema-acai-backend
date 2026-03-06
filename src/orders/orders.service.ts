@@ -28,11 +28,11 @@ export class OrdersService {
         paidPaymentStatus,
         deliveryPending,
       ] = await Promise.all([
-        tx.orderStatus.findUnique({ where: { name: 'PENDING' } }),
-        tx.paymentStatus.findUnique({ where: { name: 'PENDING' } }),
-        tx.paymentStatus.findUnique({ where: { name: 'PARCIAL' } }),
-        tx.paymentStatus.findUnique({ where: { name: 'PAID' } }),
-        tx.deliveryStatus.findUnique({ where: { name: 'PENDING' } }),
+        tx.orderStatus.findUnique({ where: { name: 'Pendente' } }),
+        tx.paymentStatus.findUnique({ where: { name: 'Pendente' } }),
+        tx.paymentStatus.findUnique({ where: { name: 'Parcial' } }),
+        tx.paymentStatus.findUnique({ where: { name: 'Pago' } }),
+        tx.deliveryStatus.findUnique({ where: { name: 'Pendente' } }),
       ]);
 
       // 🚨 Validação de segurança
@@ -152,7 +152,7 @@ export class OrdersService {
   }
 
   async startOrder(orderId: string) {
-    return this.changeOrderStatus(orderId, 'PENDING', 'IN_COURSE');
+    return this.changeOrderStatus(orderId, 'Pendente', 'Em_Curso');
   }
 
   async confirmPayment(orderId: string) {
@@ -174,7 +174,7 @@ export class OrdersService {
       }
 
       const paidStatus = await tx.paymentStatus.findUnique({
-        where: { name: 'PAID' },
+        where: { name: 'Pago' },
       });
 
       return tx.order.update({
@@ -195,7 +195,7 @@ export class OrdersService {
         throw new NotFoundException('Pedido não encontrado');
       }
 
-      if (order.orderStatusId === 'CANCELED') {
+      if (order.orderStatusId === 'Cancelado') {
         throw new BadRequestException('Pedido cancelado');
       }
 
@@ -220,15 +220,15 @@ export class OrdersService {
       );
 
       const pending = await tx.paymentStatus.findUnique({
-        where: { name: 'PENDING' },
+        where: { name: 'Pendente' },
       });
 
       const partial = await tx.paymentStatus.findUnique({
-        where: { name: 'PARCIAL' },
+        where: { name: 'Parcial' },
       });
 
       const paid = await tx.paymentStatus.findUnique({
-        where: { name: 'PAID' },
+        where: { name: 'Pago' },
       });
 
       let paymentStatusId = pending.id;
@@ -268,7 +268,7 @@ export class OrdersService {
         throw new NotFoundException('Pedido não encontrado');
       }
 
-      if (order.orderStatus.name === 'FINALIZED') {
+      if (order.orderStatus.name === 'Finalizado') {
         throw new BadRequestException(
           'Não é possível alterar pagamentos de pedido finalizado',
         );
@@ -296,15 +296,15 @@ export class OrdersService {
       );
 
       const pending = await tx.paymentStatus.findUnique({
-        where: { name: 'PENDING' },
+        where: { name: 'Pendente' },
       });
 
       const partial = await tx.paymentStatus.findUnique({
-        where: { name: 'PARCIAL' },
+        where: { name: 'Parcial' },
       });
 
       const paid = await tx.paymentStatus.findUnique({
-        where: { name: 'PAID' },
+        where: { name: 'Pago' },
       });
 
       let paymentStatusId = pending.id;
@@ -343,8 +343,8 @@ export class OrdersService {
 
       if (!order) throw new NotFoundException('Pedido não encontrado');
 
-      if (order.orderStatus.name !== 'IN_COURSE') {
-        throw new BadRequestException('Pedido precisa estar IN_COURSE');
+      if (order.orderStatus.name !== 'Em_Curso') {
+        throw new BadRequestException('Pedido precisa estar Em_Curso');
       }
 
       // 🔥 VALIDA ESTOQUE
@@ -354,7 +354,7 @@ export class OrdersService {
       await this.stockService.decreaseStock(tx, order.id, order.items);
 
       const finalizedStatus = await tx.orderStatus.findUnique({
-        where: { name: 'FINALIZED' },
+        where: { name: 'Finalizado' },
       });
 
       return tx.order.update({
@@ -376,10 +376,10 @@ export class OrdersService {
       if (!order) throw new NotFoundException('Pedido não encontrado');
 
       const canceledStatus = await tx.orderStatus.findUnique({
-        where: { name: 'CANCELED' },
+        where: { name: 'Cancelado' },
       });
 
-      if (order.orderStatus.name === 'FINALIZED') {
+      if (order.orderStatus.name === 'Finalizado') {
         // 🔁 DEVOLVE ESTOQUE
         await this.stockService.increaseStock(tx, order.id, order.items);
       }

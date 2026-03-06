@@ -56,10 +56,15 @@ async function main() {
         roleId: sellerRole.id,
       },
     });
-    const orderStatusNames = ['PENDING', 'IN_COURSE', 'FINALIZED', 'CANCELED'];
-    const paymentStatusNames = ['PENDING', 'PARCIAL', 'PAID'];
-    const deliveryStatusNames = ['PENDING', 'IN_COURSE', 'FINALIZED'];
-    const paymentMethods = ['CASH', 'CREDIT', 'DEBIT', 'PIX', 'IFOOD'];
+    const orderStatusNames = [
+      'Pendente',
+      'Em_Curso',
+      'Finalizado',
+      'Cancelado',
+    ];
+    const paymentStatusNames = ['Pendente', 'Parcial', 'Pago'];
+    const deliveryStatusNames = ['Pendente', 'Em_Curso', 'Finalizado'];
+    const paymentMethods = ['Dinheiro', 'Crédito', 'Débito', 'Pix', 'Ifood'];
 
     for (const name of orderStatusNames)
       await prisma.orderStatus.upsert({
@@ -91,39 +96,39 @@ async function main() {
 
     // STATUS
     const pendingStatus = await prisma.orderStatus.findUnique({
-      where: { name: 'PENDING' },
+      where: { name: 'Pendente' },
     });
     const inCourseStatus = await prisma.orderStatus.findUnique({
-      where: { name: 'IN_COURSE' },
+      where: { name: 'Em_Curso' },
     });
     const finalizedStatus = await prisma.orderStatus.findUnique({
-      where: { name: 'FINALIZED' },
+      where: { name: 'Finalizado' },
     });
     const canceledStatus = await prisma.orderStatus.findUnique({
-      where: { name: 'CANCELED' },
+      where: { name: 'Cancelado' },
     });
 
     const paymentPending = await prisma.paymentStatus.findUnique({
-      where: { name: 'PENDING' },
+      where: { name: 'Pendente' },
     });
     const paymentPaid = await prisma.paymentStatus.findUnique({
-      where: { name: 'PAID' },
+      where: { name: 'Pago' },
     });
 
     const pixPayment = await prisma.paymentMethod.findUnique({
-      where: { name: 'PIX' },
+      where: { name: 'Pix' },
     });
     const cashPayment = await prisma.paymentMethod.findUnique({
-      where: { name: 'CASH' },
+      where: { name: 'Dinheiro' },
     });
     const creditPayment = await prisma.paymentMethod.findUnique({
-      where: { name: 'CREDIT' },
+      where: { name: 'Crédito' },
     });
     const debitPayment = await prisma.paymentMethod.findUnique({
-      where: { name: 'DEBIT' },
+      where: { name: 'Débito' },
     });
     const ifoodPayment = await prisma.paymentMethod.findUnique({
-      where: { name: 'IFOOD' },
+      where: { name: 'Ifood' },
     });
     if (
       !creditPayment ||
@@ -132,17 +137,17 @@ async function main() {
       !pixPayment ||
       !cashPayment
     ) {
-      throw new Error('Algum PaymentMethod não foi encontrado no seed.');
+      throw new Error('Algum método de pagamento não foi encontrado no seed.');
     }
 
     const deliveryPending = await prisma.deliveryStatus.findUnique({
-      where: { name: 'PENDING' },
+      where: { name: 'Pendente' },
     });
     const deliveryInCourse = await prisma.deliveryStatus.findUnique({
-      where: { name: 'IN_COURSE' },
+      where: { name: 'Em_Curso' },
     });
     const deliveryFinalized = await prisma.deliveryStatus.findUnique({
-      where: { name: 'FINALIZED' },
+      where: { name: 'Finalizado' },
     });
 
     // Clientes

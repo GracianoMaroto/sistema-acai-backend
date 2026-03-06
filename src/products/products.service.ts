@@ -52,27 +52,128 @@ export class ProductsService {
   }
 
   async getMetrics() {
-    const totalProducts = await this.prisma.product.count();
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const products = await this.prisma.product.findMany({
-      orderBy: { createdAt: 'desc' },
-    });
+    const last30Days = new Date();
+    last30Days.setDate(now.getDate() - 30);
 
-    const totalStockValue = products.reduce((acc, product) => {
-      return acc + Number(product.basePrice);
-    }, 0);
+    const [
+      revenueMonth,
+      profitMonth,
+      totalOrders,
+      topProduct,
+      topCustomer,
+      salesLast30Days,
+    ] = await Promise.all([
+      this.prisma.order.aggregate({
+        _sum: {
+          totalAmount: true,
+        },
+        where: {
+          orderDate: {
+            gte: startOfMonth,
+          },
+        },
+      }),
 
-    const mostExpensive = await this.prisma.product.findFirst({
-      orderBy: { basePrice: 'desc' },
-    });
+      this.prisma.order.aggregate({
+        _sum: {
+          totalProfit: true,
+        },
+        where: {
+          orderDate: {
+            gte: startOfMonth,
+          },
+        },
+      }),
 
-    const latestProduct = products[0] || null;
+      this.prisma.order.count({
+        where: {
+          orderDate: {
+            gte: startOfMonth,
+          },
+        },
+      }),
+
+      this.prisma.orderItem.groupBy({
+        by: ['productVariantId'],
+        _sum: {
+          quantity: true,
+        },
+        orderBy: {
+          _sum: {
+            quantity: 'desc',
+          },
+        },
+        take: 1,
+      }),
+
+      this.prisma.order.groupBy({
+        by: ['customerId'],
+        _count: {
+          id: true,
+        },
+        orderBy: {
+          _count: {
+            id: 'desc',
+          },
+        },
+        take: 1,
+      }),
+
+      this.prisma.order.findMany({
+        where: {
+          orderDate: {
+            gte: last30Days,
+          },
+        },
+        select: {
+          orderDate: true,
+          totalAmount: true,
+        },
+        orderBy: {
+          orderDate: 'asc',
+        },
+      }),
+    ]);
+
+    const totalRevenue = Number(revenueMonth._sum.totalAmount || 0);
+    const totalProfit = Number(profitMonth._sum.totalProfit || 0);
+
+    const averageTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+    let topProductData = null;
+
+    if (topProduct.length > 0) {
+      topProductData = await this.prisma.productVariant.findUnique({
+        where: {
+          id: topProduct[0].productVariantId,
+        },
+        include: {
+          product: true,
+        },
+      });
+    }
+
+    let topCustomerData = null;
+
+    if (topCustomer.length > 0 && topCustomer[0].customerId) {
+      topCustomerData = await this.prisma.customer.findUnique({
+        where: {
+          id: topCustomer[0].customerId,
+        },
+      });
+    }
 
     return {
-      totalProducts,
-      totalStockValue,
-      mostExpensive,
-      latestProduct,
+      revenueMonth: totalRevenue,
+      profitMonth: totalProfit,
+      totalOrders,
+      averageTicket,
+      topProduct: topProductData,
+      topCustomer: topCustomerData,
+      salesLast30Days,
     };
   }
 

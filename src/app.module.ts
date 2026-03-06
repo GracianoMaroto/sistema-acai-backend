@@ -15,6 +15,7 @@ import { SaleChannelsModule } from './sale-channels/sale-channels.module';
 import { ProductPriceModule } from './productprice/productprice.module';
 import { ProductPriceService } from './productprice/productprice.service';
 import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
+import { CustomersModule } from './customers/customers.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { PaymentMethodsModule } from './payment-methods/payment-methods.module';
     SaleChannelsModule,
     ProductPriceModule,
     PaymentMethodsModule,
+    CustomersModule,
   ],
   controllers: [AppController],
   providers: [AppService, OrdersService, StockService, ProductPriceService],
