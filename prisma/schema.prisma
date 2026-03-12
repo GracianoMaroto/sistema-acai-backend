@@ -77,16 +77,17 @@ model ProductPrice {
 }
 
 model Customer {
-  id         String  @id @default(uuid())
-  name       String
-  phone      String?
-  email      String? @unique
-  street     String
-  number     String
-  city       String
-  state      String
-  zipCode    String
-  complement String?
+  id           String  @id @default(uuid())
+  name         String
+  phone        String?
+  email        String? @unique
+  street       String?
+  neighborhood String?
+  number       String?
+  city         String?
+  state        String?
+  zipCode      String?
+  complement   String?
 
   orders Order[]
 
