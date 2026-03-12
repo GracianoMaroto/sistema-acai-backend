@@ -25,6 +25,21 @@ export class ProductsService {
   async findAll() {
     return this.prisma.product.findMany({
       orderBy: { createdAt: 'desc' },
+      include: {
+        variants: {
+          include: {
+            prices: {
+              include: {
+                saleChannel: true,
+              },
+            },
+            stockMovements: {
+              orderBy: { createdAt: 'desc' },
+              take: 5,
+            },
+          },
+        },
+      },
     });
   }
 
