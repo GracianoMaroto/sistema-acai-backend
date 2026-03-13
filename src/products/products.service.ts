@@ -9,16 +9,59 @@ export class ProductsService {
   constructor(private prisma: PrismaService) {}
 
   async create(dto: CreateProductDto) {
-    return this.prisma.product.create({
-      data: {
-        name: dto.name,
-        description: dto.description,
-        basePrice: new Prisma.Decimal(dto.basePrice),
-        costPrice: dto.costPrice
-          ? new Prisma.Decimal(dto.costPrice)
-          : undefined,
-        active: dto.active ?? true,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const channels = await tx.saleChannel.findMany();
+
+      const product = await tx.product.create({
+        data: {
+          name: dto.name,
+          description: dto.description,
+          active: dto.active ?? true,
+
+          variants: {
+            create: dto.variants.map((variant) => {
+              const basePrice = variant.prices?.[0];
+
+              if (!basePrice) {
+                throw new Error('Preço base da variante não informado');
+              }
+
+              return {
+                name: variant.name,
+                stockQuantity: variant.stockQuantity ?? 0,
+
+                prices: {
+                  create: channels.map((channel) => ({
+                    saleChannelId: channel.id,
+                    price: new Prisma.Decimal(basePrice.price),
+                    cost: new Prisma.Decimal(basePrice.cost),
+                  })),
+                },
+              };
+            }),
+          },
+        },
+
+        include: {
+          variants: true,
+        },
+      });
+
+      // cria movimentação de estoque inicial
+      for (const variant of product.variants) {
+        if (variant.stockQuantity > 0) {
+          await tx.stockMovement.create({
+            data: {
+              productVariantId: variant.id,
+              quantity: variant.stockQuantity,
+              type: 'IN',
+              reason: 'Estoque inicial do produto',
+            },
+          });
+        }
+      }
+
+      return product;
     });
   }
 
@@ -46,23 +89,94 @@ export class ProductsService {
   async findOne(id: string) {
     return this.prisma.product.findUnique({
       where: { id },
+      include: {
+        variants: {
+          include: {
+            prices: {
+              include: {
+                saleChannel: true,
+              },
+            },
+            stockMovements: true,
+          },
+        },
+      },
     });
   }
 
   async update(id: string, dto: UpdateProductDto) {
-    return this.prisma.product.update({
-      where: { id },
-      data: {
-        name: dto.name,
-        description: dto.description,
-        basePrice: dto.basePrice
-          ? new Prisma.Decimal(dto.basePrice)
-          : undefined,
-        costPrice: dto.costPrice
-          ? new Prisma.Decimal(dto.costPrice)
-          : undefined,
-        active: dto.active,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const product = await tx.product.update({
+        where: { id },
+        data: {
+          name: dto.name,
+          description: dto.description,
+        },
+        include: { variants: true },
+      });
+
+      const existingVariantIds = product.variants.map((v) => v.id);
+
+      const incomingVariantIds = dto.variants
+        .filter((v) => v.id)
+        .map((v) => v.id);
+
+      // 🔴 deletar variantes removidas
+      const variantsToDelete = existingVariantIds.filter(
+        (id) => !incomingVariantIds.includes(id),
+      );
+
+      if (variantsToDelete.length) {
+        await tx.productPrice.deleteMany({
+          where: {
+            productVariantId: { in: variantsToDelete },
+          },
+        });
+
+        await tx.productVariant.deleteMany({
+          where: { id: { in: variantsToDelete } },
+        });
+      }
+
+      // 🟢 criar ou atualizar variantes
+      for (const v of dto.variants) {
+        if (v.id) {
+          await tx.productVariant.update({
+            where: { id: v.id },
+            data: {
+              name: v.name,
+              stockQuantity: v.stockQuantity,
+            },
+          });
+
+          await tx.productPrice.updateMany({
+            where: { productVariantId: v.id },
+            data: {
+              price: v.prices[0].price,
+              cost: v.prices[0].cost,
+            },
+          });
+        } else {
+          const newVariant = await tx.productVariant.create({
+            data: {
+              name: v.name,
+              stockQuantity: v.stockQuantity,
+              productId: id,
+            },
+          });
+
+          await tx.productPrice.create({
+            data: {
+              productVariantId: newVariant.id,
+              saleChannelId: (await tx.saleChannel.findFirst()).id,
+              price: v.prices[0].price,
+              cost: v.prices[0].cost,
+            },
+          });
+        }
+      }
+
+      return product;
     });
   }
 
@@ -193,8 +307,35 @@ export class ProductsService {
   }
 
   async remove(id: string) {
-    return this.prisma.product.delete({
-      where: { id },
+    return this.prisma.$transaction(async (tx) => {
+      const variants = await tx.productVariant.findMany({
+        where: { productId: id },
+      });
+
+      for (const variant of variants) {
+        if (variant.stockQuantity > 0) {
+          await tx.stockMovement.create({
+            data: {
+              productVariantId: variant.id,
+              quantity: variant.stockQuantity,
+              type: 'OUT',
+              reason: 'Produto desativado',
+            },
+          });
+
+          await tx.productVariant.update({
+            where: { id: variant.id },
+            data: {
+              stockQuantity: 0,
+            },
+          });
+        }
+      }
+
+      return tx.product.update({
+        where: { id },
+        data: { active: false },
+      });
     });
   }
 }

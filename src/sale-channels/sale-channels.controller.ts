@@ -12,7 +12,7 @@ export class SaleChannelsController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.saleChannelsService.findOne(+id);
+    return this.saleChannelsService.findOne(id);
   }
 
   @Delete(':id')

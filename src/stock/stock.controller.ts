@@ -1,4 +1,11 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StockService } from './stock.service';
 
@@ -26,11 +33,29 @@ export class StockController {
     });
   }
 
+  @Get('variant/:variantId')
+  findByVariant(@Param('variantId') productVariantId: string) {
+    return this.prisma.stockMovement.findMany({
+      where: {
+        productVariantId,
+      },
+      include: {
+        productVariant: {
+          include: {
+            product: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
   @Post('stock-movements')
   async createMovement(
     @Body()
     body: {
-      productVariantId: string;
+      variantId: string;
       type: 'IN' | 'OUT';
       quantity: number;
       reason?: string;
@@ -39,7 +64,7 @@ export class StockController {
     return this.prisma.$transaction(async (tx) => {
       if (body.type === 'IN') {
         await tx.productVariant.update({
-          where: { id: body.productVariantId },
+          where: { id: body.variantId },
           data: {
             stockQuantity: {
               increment: body.quantity,
@@ -47,8 +72,15 @@ export class StockController {
           },
         });
       } else {
+        const variant = await tx.productVariant.findUnique({
+          where: { id: body.variantId },
+        });
+
+        if (body.type === 'OUT' && variant.stockQuantity < body.quantity) {
+          throw new BadRequestException('Estoque insuficiente');
+        }
         await tx.productVariant.update({
-          where: { id: body.productVariantId },
+          where: { id: body.variantId },
           data: {
             stockQuantity: {
               decrement: body.quantity,
@@ -62,7 +94,7 @@ export class StockController {
           type: body.type,
           quantity: body.quantity,
           reason: body.reason,
-          productVariantId: body.productVariantId,
+          productVariantId: body.variantId,
         },
       });
     });

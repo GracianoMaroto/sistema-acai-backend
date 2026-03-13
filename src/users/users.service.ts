@@ -9,7 +9,6 @@ export class UsersService {
 
   async create(dto: CreateUserDto) {
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    console.log('dto', dto);
     return this.prisma.user.create({
       data: {
         name: dto.name,

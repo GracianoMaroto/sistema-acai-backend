@@ -188,14 +188,14 @@ export class OrdersService {
     return this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
-        include: { payments: true },
+        include: { payments: true, orderStatus: true },
       });
 
       if (!order) {
         throw new NotFoundException('Pedido não encontrado');
       }
 
-      if (order.orderStatusId === 'Cancelado') {
+      if (order.orderStatus.name === 'Cancelado') {
         throw new BadRequestException('Pedido cancelado');
       }
 
@@ -347,10 +347,8 @@ export class OrdersService {
         throw new BadRequestException('Pedido precisa estar Em_Curso');
       }
 
-      // 🔥 VALIDA ESTOQUE
       await this.stockService.validateStock(tx, order.items);
 
-      // 🔥 BAIXA ESTOQUE
       await this.stockService.decreaseStock(tx, order.id, order.items);
 
       const finalizedStatus = await tx.orderStatus.findUnique({

@@ -64,7 +64,7 @@ async function main() {
     ];
     const paymentStatusNames = ['Pendente', 'Parcial', 'Pago'];
     const deliveryStatusNames = ['Pendente', 'Em_Curso', 'Finalizado'];
-    const paymentMethods = ['Dinheiro', 'Crédito', 'Débito', 'Pix', 'Ifood'];
+    const paymentMethods = ['Dinheiro', 'Crédito', 'Débito', 'Pix', 'iFood'];
 
     for (const name of orderStatusNames)
       await prisma.orderStatus.upsert({
@@ -127,13 +127,13 @@ async function main() {
     const debitPayment = await prisma.paymentMethod.findUnique({
       where: { name: 'Débito' },
     });
-    const ifoodPayment = await prisma.paymentMethod.findUnique({
-      where: { name: 'Ifood' },
+    const iFoodPayment = await prisma.paymentMethod.findUnique({
+      where: { name: 'iFood' },
     });
     if (
       !creditPayment ||
       !debitPayment ||
-      !ifoodPayment ||
+      !iFoodPayment ||
       !pixPayment ||
       !cashPayment
     ) {
@@ -187,11 +187,14 @@ async function main() {
       },
     });
 
-    const ifood = await prisma.saleChannel.upsert({
-      where: { name: 'Ifood' },
-      update: {},
+    const iFood = await prisma.saleChannel.upsert({
+      where: { name: 'iFood' },
+      update: {
+        modifierType: 'MARKUP',
+        priceModifier: new Prisma.Decimal(10),
+      },
       create: {
-        name: 'Ifood',
+        name: 'iFood',
         modifierType: 'MARKUP',
         priceModifier: new Prisma.Decimal(10),
       },
@@ -221,8 +224,6 @@ async function main() {
       data: {
         name: 'Açaí na Garrafa 300ml',
         description: 'Açaí da Bahia batido com leite e leite condensado.',
-        basePrice: new Prisma.Decimal(20),
-        costPrice: new Prisma.Decimal(7.5),
       },
     });
 
@@ -256,12 +257,12 @@ async function main() {
     }
     // PREÇOS AÇAÍ
     const prices = [
-      { variant: tradicional, street: [20, 6.69], ifood: [21.9, 13.3] },
-      { variant: maracuja, street: [23, 7.25], ifood: [23.9, 15.2] },
-      { variant: morango, street: [23, 8.59], ifood: [24.9, 16] },
-      { variant: nutella, street: [23, 8.59], ifood: [24.9, 16] },
+      { variant: tradicional, base: [20, 6.69] },
+      { variant: maracuja, base: [23, 7.25] },
+      { variant: morango, base: [23, 8.59] },
+      { variant: nutella, base: [23, 8.59] },
     ];
-    const channels = [street, horto, instagram, whatsapp];
+    const channels = [street, horto, instagram, whatsapp, iFood];
 
     for (const item of prices) {
       for (const channel of channels) {
@@ -269,20 +270,11 @@ async function main() {
           data: {
             productVariantId: item.variant.id,
             saleChannelId: channel.id,
-            price: new Prisma.Decimal(item.street[0]),
-            cost: new Prisma.Decimal(item.street[1]),
+            price: new Prisma.Decimal(item.base[0]),
+            cost: new Prisma.Decimal(item.base[1]),
           },
         });
       }
-
-      await prisma.productPrice.create({
-        data: {
-          productVariantId: item.variant.id,
-          saleChannelId: ifood.id,
-          price: new Prisma.Decimal(item.ifood[0]),
-          cost: new Prisma.Decimal(item.ifood[1]),
-        },
-      });
     }
     console.log('✅ Seed finalizado com sucesso!');
   } catch (e) {

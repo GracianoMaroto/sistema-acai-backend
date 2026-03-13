@@ -5,7 +5,7 @@ import {
   ValidateNested,
   IsInt,
   Min,
-  IsDecimal,
+  IsNumber,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -22,8 +22,8 @@ class CreatePaymentDto {
   @IsUUID()
   paymentMethodId: string;
 
-  @IsDecimal()
-  amount: string; // Decimal vem como string no Prisma
+  @IsNumber()
+  amount: number; // Decimal vem como string no Prisma
 }
 
 export class CreateOrderDto {

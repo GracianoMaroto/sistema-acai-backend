@@ -10,8 +10,10 @@ export class SaleChannelsService {
       orderBy: { name: 'asc' },
     });
   }
-  findOne(id: number) {
-    return `This action returns a #${id} saleChannel`;
+  findOne(id: string) {
+    return this.prisma.saleChannel.findUnique({
+      where: { id },
+    });
   }
 
   remove(id: number) {
