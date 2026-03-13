@@ -11,7 +11,7 @@ async function bootstrap() {
     allowedHeaders: 'Content-Type, Accept, Authorization',
   });
   await app.listen(process.env.PORT || 3000);
-  console.log('Hello Port', process.env.PORT);
+  console.log('Olá Porta', process.env.PORT);
 
   app.useGlobalPipes(
     new ValidationPipe({
