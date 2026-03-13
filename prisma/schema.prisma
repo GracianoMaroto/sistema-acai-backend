@@ -32,6 +32,8 @@ model Product {
   name        String
   description String?
   active      Boolean          @default(true)
+  basePrice   Decimal?
+  costPrice   Decimal?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   variants    ProductVariant[]

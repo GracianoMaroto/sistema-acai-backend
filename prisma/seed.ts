@@ -224,6 +224,8 @@ async function main() {
       data: {
         name: 'Açaí na Garrafa 300ml',
         description: 'Açaí da Bahia batido com leite e leite condensado.',
+        basePrice: new Prisma.Decimal(20),
+        costPrice: new Prisma.Decimal(6.69),
       },
     });
 
