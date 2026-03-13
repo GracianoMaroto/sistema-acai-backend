@@ -9,88 +9,76 @@ datasource db {
 model Role {
   id        String   @id @default(uuid())
   name      String   @unique
-  users     User[]
   createdAt DateTime @default(now())
+  users     User[]
 }
 
 model User {
-  id           String  @id @default(uuid())
+  id           String   @id @default(uuid())
   name         String
-  email        String  @unique
+  email        String   @unique
   passwordHash String
-  active       Boolean @default(true)
-
+  active       Boolean  @default(true)
+  roleId       String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
   refreshToken String?
-
-  roleId String
-  role   Role   @relation(fields: [roleId], references: [id])
-
-  orders Order[] @relation("SellerOrders")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  orders       Order[]  @relation("SellerOrders")
+  role         Role     @relation(fields: [roleId], references: [id])
 }
 
 model Product {
-  id          String  @id @default(uuid())
+  id          String           @id @default(uuid())
   name        String
   description String?
-  active      Boolean @default(true)
-
-  variants ProductVariant[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  basePrice   Decimal          @db.Decimal(10, 2)
+  costPrice   Decimal          @db.Decimal(10, 2)
+  active      Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  variants    ProductVariant[]
 }
 
 model ProductVariant {
-  id            String @id @default(uuid())
-  name          String
-  stockQuantity Int    @default(0)
-
-  productId String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  prices     ProductPrice[]
-  orderItems OrderItem[]
-
+  id             String          @id @default(uuid())
+  stockQuantity  Int             @default(0)
+  productId      String
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
+  name           String
+  orderItems     OrderItem[]
+  prices         ProductPrice[]
+  product        Product         @relation(fields: [productId], references: [id])
   stockMovements StockMovement[]
 }
 
 model ProductPrice {
-  id String @id @default(uuid())
-
+  id               String         @id @default(uuid())
   productVariantId String
   saleChannelId    String
-
-  price Decimal @db.Decimal(10, 2)
-  cost  Decimal @db.Decimal(10, 2)
-
-  productVariant ProductVariant @relation(fields: [productVariantId], references: [id])
-  saleChannel    SaleChannel    @relation(fields: [saleChannelId], references: [id])
+  price            Decimal        @db.Decimal(10, 2)
+  cost             Decimal        @db.Decimal(10, 2)
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id])
+  saleChannel      SaleChannel    @relation(fields: [saleChannelId], references: [id])
 
   @@unique([productVariantId, saleChannelId])
 }
 
 model Customer {
-  id           String  @id @default(uuid())
+  id           String   @id @default(uuid())
   name         String
   phone        String?
-  email        String? @unique
+  email        String?  @unique
   street       String?
-  neighborhood String?
   number       String?
   city         String?
   state        String?
   zipCode      String?
   complement   String?
-
-  orders Order[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  neighborhood String?
+  orders       Order[]
 }
 
 model OrderStatus {
@@ -118,14 +106,73 @@ model PaymentMethod {
 }
 
 model SaleChannel {
-  id            String        @id @default(uuid())
-  name          String        @unique
-  priceModifier Decimal?      @db.Decimal(10, 2)
+  id            String         @id @default(uuid())
+  name          String         @unique
+  createdAt     DateTime       @default(now())
   modifierType  ModifierType?
-  createdAt     DateTime      @default(now())
-
-  productPrices ProductPrice[]
+  priceModifier Decimal?       @db.Decimal(10, 2)
   orders        Order[]
+  productPrices ProductPrice[]
+}
+
+model Order {
+  id               String          @id @default(uuid())
+  orderDate        DateTime        @default(now())
+  deliveryDate     DateTime?
+  totalAmount      Decimal         @db.Decimal(10, 2)
+  totalCost        Decimal         @db.Decimal(10, 2)
+  totalProfit      Decimal         @db.Decimal(10, 2)
+  sellerId         String
+  customerId       String?
+  orderStatusId    String
+  paymentStatusId  String
+  deliveryStatusId String
+  saleChannelId    String
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  customer         Customer?       @relation(fields: [customerId], references: [id])
+  deliveryStatus   DeliveryStatus  @relation(fields: [deliveryStatusId], references: [id])
+  orderStatus      OrderStatus     @relation(fields: [orderStatusId], references: [id])
+  paymentStatus    PaymentStatus   @relation(fields: [paymentStatusId], references: [id])
+  saleChannel      SaleChannel     @relation(fields: [saleChannelId], references: [id])
+  seller           User            @relation("SellerOrders", fields: [sellerId], references: [id])
+  items            OrderItem[]
+  payments         Payment[]
+  stockMovements   StockMovement[]
+}
+
+model OrderItem {
+  id               String         @id @default(uuid())
+  quantity         Int
+  unitPrice        Decimal        @db.Decimal(10, 2)
+  unitCost         Decimal        @db.Decimal(10, 2)
+  orderId          String
+  productVariantId String
+  order            Order          @relation(fields: [orderId], references: [id])
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id])
+}
+
+model StockMovement {
+  id               String            @id @default(uuid())
+  type             StockMovementType
+  quantity         Int
+  reason           String?
+  productVariantId String
+  orderId          String?
+  createdAt        DateTime          @default(now())
+  order            Order?            @relation(fields: [orderId], references: [id])
+  productVariant   ProductVariant    @relation(fields: [productVariantId], references: [id])
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  amount          Decimal       @db.Decimal(10, 2)
+  paymentDate     DateTime      @default(now())
+  notes           String?
+  orderId         String
+  paymentMethodId String
+  order           Order         @relation(fields: [orderId], references: [id])
+  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
 }
 
 enum ModifierType {
@@ -133,87 +180,7 @@ enum ModifierType {
   MARKUP
 }
 
-model Order {
-  id           String    @id @default(uuid())
-  orderDate    DateTime  @default(now())
-  deliveryDate DateTime?
-
-  totalAmount Decimal @db.Decimal(10, 2)
-  totalCost   Decimal @db.Decimal(10, 2)
-  totalProfit Decimal @db.Decimal(10, 2)
-
-  sellerId String
-  seller   User   @relation("SellerOrders", fields: [sellerId], references: [id])
-
-  customerId String?
-  customer   Customer? @relation(fields: [customerId], references: [id])
-
-  orderStatusId String
-  orderStatus   OrderStatus @relation(fields: [orderStatusId], references: [id])
-
-  paymentStatusId String
-  paymentStatus   PaymentStatus @relation(fields: [paymentStatusId], references: [id])
-
-  deliveryStatusId String
-  deliveryStatus   DeliveryStatus @relation(fields: [deliveryStatusId], references: [id])
-
-  saleChannelId String
-  saleChannel   SaleChannel @relation(fields: [saleChannelId], references: [id])
-
-  items    OrderItem[]
-  payments Payment[]
-
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  stockMovements StockMovement[]
-}
-
-model OrderItem {
-  id       String @id @default(uuid())
-  quantity Int
-
-  unitPrice Decimal @db.Decimal(10, 2)
-  unitCost  Decimal @db.Decimal(10, 2)
-
-  orderId String
-  order   Order  @relation(fields: [orderId], references: [id])
-
-  productVariantId String
-  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id])
-}
-
-model StockMovement {
-  id String @id @default(uuid())
-
-  type     StockMovementType
-  quantity Int
-
-  reason String?
-
-  productVariantId String
-  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id])
-
-  orderId String?
-  order   Order?  @relation(fields: [orderId], references: [id])
-
-  createdAt DateTime @default(now())
-}
-
 enum StockMovementType {
   IN
   OUT
-}
-
-model Payment {
-  id     String  @id @default(uuid())
-  amount Decimal @db.Decimal(10, 2)
-
-  paymentDate DateTime @default(now())
-  notes       String?
-
-  orderId String
-  order   Order  @relation(fields: [orderId], references: [id])
-
-  paymentMethodId String
-  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
 }
