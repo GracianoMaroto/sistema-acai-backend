@@ -41,7 +41,6 @@ export class ProductsService {
             }),
           },
         },
-
         include: {
           variants: true,
         },
