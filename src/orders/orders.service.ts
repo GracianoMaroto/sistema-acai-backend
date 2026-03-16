@@ -87,6 +87,13 @@ export class OrdersService {
           unitCost,
         });
       }
+      if (dto.totalAmount !== undefined) {
+        const finalTotal = new Prisma.Decimal(dto.totalAmount);
+        const discount = totalAmount.sub(finalTotal);
+
+        totalAmount = finalTotal;
+        totalProfit = totalProfit.sub(discount);
+      }
 
       // 🧾 Criar pedido
       const order = await tx.order.create({
@@ -437,7 +444,10 @@ export class OrdersService {
     };
 
     if (user.role === 'ADMIN') {
-      return this.prisma.order.findMany(baseQuery);
+      return this.prisma.order.findMany({
+        orderBy: { createdAt: 'desc' },
+        ...baseQuery,
+      });
     }
 
     return this.prisma.order.findMany({
