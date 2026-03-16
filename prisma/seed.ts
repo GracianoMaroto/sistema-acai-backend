@@ -1,6 +1,4 @@
-import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, Prisma } from '@prisma/client';
-import { Pool } from 'pg';
 import * as bcrypt from 'bcrypt';
 
 async function main() {
@@ -11,11 +9,7 @@ async function main() {
       'DATABASE_URL não está definida. Verifique o arquivo .env.',
     );
   }
-
-  const pool = new Pool({ connectionString: databaseUrl });
-  const prisma: PrismaClient = new PrismaClient({
-    adapter: new PrismaPg(pool),
-  });
+  const prisma = new PrismaClient();
   try {
     console.log('🌱 Seed iniciado...');
 
@@ -284,7 +278,6 @@ async function main() {
     process.exit(1);
   } finally {
     await prisma.$disconnect();
-    await pool.end();
   }
 }
 
